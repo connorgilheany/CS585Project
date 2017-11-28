@@ -39,14 +39,12 @@ def main():
     images = loadImages()
 
     for image in images:
-        labels, areas = labelBinaryImageComponents(image)
-        image = colorComponents(labels)
-        #rectangles = findRectangles(image)
-        #plates = detectLicensePlates(rectangles)
-        #readLicensePlates(plates)
+        rectangles = findRectangles(image)
+        plates = detectLicensePlates(rectangles)
+        readLicensePlates(plates)
         
-        cv2.imshow('image', image)
-        cv2.waitKey(0)
+        #cv2.imshow('image', image)
+        #cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 def binary(image):
@@ -59,6 +57,7 @@ def binary(image):
     return image
 
 def loadImages():
+    #might have taken the functional programming a little too far here
     return list(map(lambda name: cv2.imread("images/"+name), filter(lambda name: name[0] != ".", os.listdir("images/"))))
 
 
@@ -81,108 +80,6 @@ def readLicensePlates(plates):
     Takes an array of Rectangle objects (defined at the top of this file) which are probably license plates
     Template match to find the letters on the plate
     """
-
-"""
-Parameter components: a 2x2 matrix of component labels
-Returns colored: A 2x2x3 color image
-"""
-def colorComponents(components):
-    colored = np.zeros((components.shape[0], components.shape[1], 3), np.uint8)
-    #coloredComponents = map(getColorForComponent, components)
-    for x in range(len(components)):
-        for y in range(len(components[x])):
-            colored[x][y] = getColorForComponent(components[x][y])
-    return colored
-
-"""
-Parameter image: A 2x2 grayscale image
-Returns:
-    labels: a 2x2 matrix of component IDs
-    areas: a dictionary {componentID: total area}
-"""
-def labelBinaryImageComponents(image):
-    # image = image * -1
-    labels = np.zeros(image.shape)
-    currentLabel = 1
-    stack = []
-
-    for x in range(0, image.shape[0]):
-        for y in range(0, image.shape[1]):
-            if labels[x,y] == 0: #and image[x,y] == 0:#Make it image[x,y] == 0 to label black components instead of white
-                currentLabel += 1
-                labels[x,y] = currentLabel
-                stack += [(x,y)]
-                while len(stack) > 0: #flood fill the component
-                    point = stack.pop()
-                    neighbors = get8Neighbors(point, image.shape)
-                    sameColorNeighbors = list(filter(lambda pt: similarColors(image[pt[0], pt[1]], image[point[0], point[1]], neighbors)))
-                    unmarkedNeighbors = list(filter(lambda pt: labels[pt[0], pt[1]] == 0, sameColorNeighbors))
-                    for pt in unmarkedNeighbors:
-                        labels[pt[0], pt[1]] = labels[point[0], point[1]]
-                        stack.append(pt)
-    #labels, areas = removeSmallComponents(labels, 40)
-    areas = []
-    return labels, areas
-
-def similarColors(color1, color2):
-    #TODO: implement similar color algorithm, then check and see how the connected component labeling algorithm does on a colored image
-
-colors = {0: [0,0,0]}
-def getColorForComponent(index):
-    if index not in colors:
-        b = random.randint(0,255)
-        g = random.randint(0,255)
-        r = random.randint(0,255)
-        colors[index] = [b,g,r]
-    return colors[index]
-
-def get8Neighbors(point, dimensions):
-    x = point[0]
-    y = point[1]
-    maxX = dimensions[0]
-    maxY = dimensions[1]
-    neighbors = [(x-1, y-1), (x, y-1), (x+1, y-1), 
-                 (x-1, y),             (x+1, y),
-                 (x-1, y+1), (x, y+1), (x+1, y+1) ]
-    return list(filter(lambda point: point[0] >= 0 and point[0] < maxX and point[1] >= 0 and point[1] < maxY, neighbors))
-
-def get4Neighbors(point, dimensions):
-    x = point[0]
-    y = point[1]
-    maxX = dimensions[1]
-    maxY = dimensions[0]
-    neighbors = [   (x-1, y),       (x, y-1),  #order changed so we can  loop clockwise starting from the west
-                             (x+1, y),
-                          (x, y+1),]
-    return list(filter(lambda point: point[0] >= 0 and point[0] < maxX and point[1] >= 0 and point[1] < maxY, neighbors))
-
-"""
-Parameters:
-    labels: a 2x2 matrix of component IDs
-    minPixels: the smallest area a component should have
-Returns:
-    labels: a 2x2 matrix of component IDs where component area > minPixels
-    areas: a dictionary {componentID: total area}
-"""
-def removeSmallComponents(labels, minPixels):
-    areas = {}
-    for i in range(len(labels)):
-        for j in range(len(labels[i])):
-            label = labels[i,j]
-            if label in areas:
-                areas[label] = areas[label] + 1
-            else:
-                areas[label] = 1
-    labelsToRemove = []
-    for x in areas:
-        if areas[x] < minPixels:
-            labelsToRemove += [x]
-    for i in range(len(labels)):
-        for j in range(len(labels[i])):
-            if labels[i,j] in labelsToRemove:
-                labels[i,j] = 0
-    return labels, areas
-
 
 def open(image):
     return dilate(erode(image))
