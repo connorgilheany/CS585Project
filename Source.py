@@ -33,26 +33,20 @@ class Rectangle:
         """
         height = len(self.subimage)
         width = len(self.subimage[0])
-        if width * height < 2000:
+        if width * height < 1000:
             return False
-        return abs(width * 1.0 / height - 2) < 0.2
+        return abs(width * 1.0 / height - 2) < 0.3
 
-
+#class Character(Rectangle):
 
 
 def main():
     images = loadImages()
-
     for image in images:
+
         rectangles = findRectangles(image)
         plates = detectLicensePlates(rectangles)
-        #readLicensePlates(plates)
-        for plate in plates:
-            thresholded = dilate(cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2))
-            #binaryPlate = binary(plate.subimage)
-            labels, _ = labelBinaryImageComponents(thresholded)
-            cv2.imshow('image', colorComponents(labels))
-            cv2.waitKey(0)
+        readLicensePlates(plates)
     cv2.destroyAllWindows()
 
 def binary(image):
@@ -77,8 +71,10 @@ def findRectangles(image):
     """
     rectangles = []
     blurred = cv2.medianBlur(image, 5)
-    thresholded = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2);
-    image2, contours, hierarchy = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE);
+    kernel = np.ones((3,3), np.uint8)
+    kernel2 = np.ones((2,2), np.uint8)
+    thresholded = cv2.dilate(cv2.erode(cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 2), kernel), kernel2)
+    image2, contours, hierarchy = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     for contour in contours: 
         contourProps = cv2.boundingRect(contour)
@@ -105,6 +101,18 @@ def readLicensePlates(plates):
     Takes an array of Rectangle objects (defined at the top of this file) which are probably license plates
     Template match to find the letters on the plate
     """
+    for plate in plates: 
+        thresholded = dilate(cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2))
+        #binaryPlate = binary(plate.subimage)
+        labels, _ = labelBinaryImageComponents(thresholded)
+        """
+        TODO:
+        Find a rectangle for each object, resize it to the character template size, then template match
+        
+        """
+        cv2.imshow('image', colorComponents(labels))
+        cv2.waitKey(0)
+        #take all those objects
 
 def labelBinaryImageComponents(image):
     # image = image * -1
