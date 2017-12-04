@@ -2,7 +2,8 @@
 
 CS 585 Fall '17 Project
 
-Authors: Connor Gilheany
+Authors: 
+Connor Gilheany
 Add your names
 """
 
@@ -16,13 +17,13 @@ import random
 
 class Rectangle:
     #The top left point
-    firstX = 0
-    firstY = 0
+    x = 0
+    y = 0
     subimage = None #the array of pixels in the rectangle
 
-    def __init__(self, firstX, firstY, subimage):
-        self.firstX = firstX
-        self.firstY = firstY
+    def __init__(self, x, y, subimage):
+        self.x = x
+        self.y = y
         self.subimage = subimage
 
 
@@ -32,7 +33,11 @@ class Rectangle:
         """
         height = len(self.subimage)
         width = len(self.subimage[0])
+        if width * height < 2000:
+            return False
         return abs(width * 1.0 / height - 2) < 0.2
+
+
 
 
 def main():
@@ -41,24 +46,28 @@ def main():
     for image in images:
         rectangles = findRectangles(image)
         plates = detectLicensePlates(rectangles)
-        readLicensePlates(plates)
-        
-        #cv2.imshow('image', image)
-        #cv2.waitKey(0)
+        #readLicensePlates(plates)
+        for plate in plates:
+            thresholded = dilate(cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2))
+            #binaryPlate = binary(plate.subimage)
+            labels, _ = labelBinaryImageComponents(thresholded)
+            cv2.imshow('image', colorComponents(labels))
+            cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 def binary(image):
+    newImage = np.zeros(image.shape)
     for i in range(len(image)):
         for j in range(len(image[i])):
             if image[i][j] < 230:
-                image[i][j] = 0
+                newImage[i][j] = 0
             else:
-                image[i][j] = 255
-    return image
+                newImage[i][j] = 255
+    return newImage
 
 def loadImages():
     #might have taken the functional programming a little too far here
-    return list(map(lambda name: cv2.imread("images/"+name), filter(lambda name: name[0] != ".", os.listdir("images/"))))
+    return list(map(lambda name: cv2.imread("images/"+name, 0), filter(lambda name: name[0] != ".", os.listdir("images/"))))
 
 
 def findRectangles(image):
@@ -66,7 +75,23 @@ def findRectangles(image):
     Finds all the rectangles (possible license plates) in the image.
     Returns an array of Rectangle objects (defined at top of this file)
     """
-    pass
+    rectangles = []
+    blurred = cv2.medianBlur(image, 5)
+    thresholded = cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2);
+    image2, contours, hierarchy = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE);
+
+    for contour in contours: 
+        contourProps = cv2.boundingRect(contour)
+        x = contourProps[0]
+        y = contourProps[1]
+        width = contourProps[2]
+        height = contourProps[3]
+        y2 = y + height
+        x2 = x + width
+        subimage = image[y:y2, x:x2]
+        rectangles += [Rectangle(x, y, subimage)]
+    return rectangles
+
 
 def detectLicensePlates(rectangles):
     """
@@ -80,6 +105,87 @@ def readLicensePlates(plates):
     Takes an array of Rectangle objects (defined at the top of this file) which are probably license plates
     Template match to find the letters on the plate
     """
+
+def labelBinaryImageComponents(image):
+    # image = image * -1
+    labels = np.zeros(image.shape)
+    currentLabel = 1
+    stack = []
+
+    for x in range(0, image.shape[0]):
+        for y in range(0, image.shape[1]):
+            if labels[x,y] == 0 and image[x,y] == 0:
+                currentLabel += 1
+                labels[x,y] = currentLabel
+                stack += [(x,y)]
+                while len(stack) > 0: #flood fill the component
+                    point = stack.pop()
+                    neighbors = get8Neighbors(point, image.shape)
+                    sameColorNeighbors = list(filter(lambda pt: image[pt[0], pt[1]] == image[point[0], point[1]], neighbors))
+                    unmarkedNeighbors = list(filter(lambda pt: labels[pt[0], pt[1]] == 0, sameColorNeighbors))
+                    for pt in unmarkedNeighbors:
+                        labels[pt[0], pt[1]] = labels[point[0], point[1]]
+                        stack.append(pt)
+    labels, areas = removeSmallComponents(labels, 40)
+    return labels, areas
+
+"""
+Parameters:
+    labels: a 2x2 matrix of component IDs
+    minPixels: the smallest area a component should have
+Returns:
+    labels: a 2x2 matrix of component IDs where component area > minPixels
+    areas: a dictionary {componentID: total area}
+"""
+def removeSmallComponents(labels, minPixels):
+    areas = {}
+    for i in range(len(labels)):
+        for j in range(len(labels[i])):
+            label = labels[i,j]
+            if label in areas:
+                areas[label] = areas[label] + 1
+            else:
+                areas[label] = 1
+    labelsToRemove = []
+    for x in areas:
+        if areas[x] < minPixels:
+            labelsToRemove += [x]
+    for i in range(len(labels)):
+        for j in range(len(labels[i])):
+            if labels[i,j] in labelsToRemove:
+                labels[i,j] = 0
+    return labels, areas
+
+def get8Neighbors(point, dimensions):
+    x = point[0]
+    y = point[1]
+    maxX = dimensions[0]
+    maxY = dimensions[1]
+    neighbors = [(x-1, y-1), (x, y-1), (x+1, y-1), 
+                 (x-1, y),             (x+1, y),
+                 (x-1, y+1), (x, y+1), (x+1, y+1) ]
+    return list(filter(lambda point: point[0] >= 0 and point[0] < maxX and point[1] >= 0 and point[1] < maxY, neighbors))
+
+"""
+Parameter components: a 2x2 matrix of component labels
+Returns colored: A 2x2x3 color image
+"""
+def colorComponents(components):
+    colored = np.zeros((components.shape[0], components.shape[1], 3), np.uint8)
+    #coloredComponents = map(getColorForComponent, components)
+    for x in range(len(components)):
+        for y in range(len(components[x])):
+            colored[x][y] = getColorForComponent(components[x][y])
+    return colored
+
+colors = {0: [0,0,0]}
+def getColorForComponent(index):
+    if index not in colors:
+        b = random.randint(0,255)
+        g = random.randint(0,255)
+        r = random.randint(0,255)
+        colors[index] = [b,g,r]
+    return colors[index]
 
 def open(image):
     return dilate(erode(image))
