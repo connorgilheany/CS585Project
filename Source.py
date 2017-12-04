@@ -12,6 +12,9 @@ import cv2
 import os
 import random
 
+from colormath.color_objects import sRGBColor, LabColor
+from colormath.color_conversions import convert_color
+from colormath.color_diff import delta_e_cie2000
 
 
 class Rectangle:
@@ -102,20 +105,20 @@ Returns:
 """
 def labelBinaryImageComponents(image):
     # image = image * -1
-    labels = np.zeros(image.shape)
+    labels = np.zeros((image.shape[0], image.shape[1], 1))
     currentLabel = 1
     stack = []
 
     for x in range(0, image.shape[0]):
         for y in range(0, image.shape[1]):
-            if labels[x,y] == 0: #and image[x,y] == 0:#Make it image[x,y] == 0 to label black components instead of white
+            if labels[x][y] == 0: #and image[x,y] == 0:#Make it image[x,y] == 0 to label black components instead of white
                 currentLabel += 1
                 labels[x,y] = currentLabel
                 stack += [(x,y)]
                 while len(stack) > 0: #flood fill the component
                     point = stack.pop()
                     neighbors = get8Neighbors(point, image.shape)
-                    sameColorNeighbors = list(filter(lambda pt: similarColors(image[pt[0], pt[1]], image[point[0], point[1]], neighbors)))
+                    sameColorNeighbors = list(filter(lambda pt: areColorsSimilar(image[pt[0], pt[1]], image[point[0], point[1]]), neighbors))
                     unmarkedNeighbors = list(filter(lambda pt: labels[pt[0], pt[1]] == 0, sameColorNeighbors))
                     for pt in unmarkedNeighbors:
                         labels[pt[0], pt[1]] = labels[point[0], point[1]]
@@ -124,8 +127,24 @@ def labelBinaryImageComponents(image):
     areas = []
     return labels, areas
 
-def similarColors(color1, color2):
+def areColorsSimilar(color1, color2):
+    color1_rgb = sRGBColor(color1[0], color1[1], color1[2]);
+    color2_rgb = sRGBColor(color2[0], color2[1], color2[2]);
+
+    # Convert from RGB to Lab Color Space
+    color1_lab = convert_color(color1_rgb, LabColor);
+    color2_lab = convert_color(color2_rgb, LabColor);
+
+    # Find the color difference
+    delta_e = delta_e_cie2000(color1_lab, color2_lab);
+
+    #print("The difference between the 2 color = " + str(delta_e))
+    THRESHOLD = 15
+    return delta_e < THRESHOLD 
     #TODO: implement similar color algorithm, then check and see how the connected component labeling algorithm does on a colored image
+
+def dist3(p1, p2):
+    return ((int(p2[0]) - int(p1[0])) ** 2 + (int(p2[1]) - int(p1[1])) ** 2 + (int(p2[2]) - int(p1[2])) ** 2) ** 0.5
 
 colors = {0: [0,0,0]}
 def getColorForComponent(index):
