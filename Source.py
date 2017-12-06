@@ -28,22 +28,40 @@ class Rectangle:
         self.y = y
         self.subimage = subimage
 
-
     def isLicensePlate(self):
         """
         Detect which rectangles are license plates based on their proportions (TODO figure out what other criteria to check)
         """
-        height = len(self.subimage)
-        width = len(self.subimage[0])
-        if width * height < 1000:
+        if self.area() < 1000:
             return False
-        return abs(width * 1.0 / height - 2) < 0.3
+        return abs(self.width() * 1.0 / self.height() - 2) < 0.3
 
-#class Character(Rectangle):
+    def isCharacter(self):
+        if self.area() < 100:
+            return False
+        return self.height() > self.width() #abs(self.height() * 1.0 / self.width() - 2) < 1
+
+    def height(self):
+        return len(self.subimage)
+
+    def width(self):
+        return len(self.subimage[0])
+
+    def area(self):
+        return self.height() * self.width()
+
+class CharacterTemplate(Rectangle):
+    character = ""
+    template = None
+
+    def __init__(self, character, template):
+        self.character = character
+        self.template = template
 
 
 def main():
     images = loadImages()
+    loadTemplates()
     for image in images:
 
         rectangles = findRectangles(image)
@@ -104,98 +122,76 @@ def readLicensePlates(plates):
     Template match to find the letters on the plate
     """
     for plate in plates: 
-        thresholded = dilate(cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2))
+        thresholded = cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 2)
         #binaryPlate = binary(plate.subimage)
-        labels, _ = labelBinaryImageComponents(thresholded)
+        cv2.imshow("image",thresholded)
+        cv2.waitKey(0)
+        image2, contours, _ = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+        rectangles = []
+        for contour in contours:
+            contourProps = cv2.boundingRect(contour)
+            x = contourProps[0]
+            y = contourProps[1]
+            width = contourProps[2]
+            height = contourProps[3]
+            y2 = y + height
+            x2 = x + width
+            subimage = plate.subimage[y:y2, x:x2]
+            character = Rectangle(x, y, subimage)
+            if character.area() / plate.area() * 100 > 2.5 and character.isCharacter():
+                rectangles += [character]
+
+
+        for potentialCharacter in rectangles:
+            binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            #binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2)
+            char, correlation = matchImageToCharacter(binaryImage)
+            print("This image best matches "+char+" (correlation="+str(correlation)+")")
+            cv2.imshow("character", binaryImage)
+            cv2.waitKey(0)
+            #cv2.imshow("character", rectangle.subimage)
+            #cv2.waitKey(0)
+
+
+
         """
         TODO:
         Find a rectangle for each object, resize it to the character template size, then template match
-        
         """
-        cv2.imshow('image', colorComponents(labels))
-        cv2.waitKey(0)
+
+
+
+        """for x in range(1, numberOfObjects):
+            rect = getRectangleForObject(plate.subimage, labels, x)
+            if rect is None:
+                continue
+            print("x="+str(rect.x)+" y="+str(rect.y)+" subimage shape="+str(rect.subimage.shape))"""
+
+
+        #cv2.imshow('image', colorComponents(labels))
+        #cv2.waitKey(0)
         #take all those objects
 
-def labelBinaryImageComponents(image):
-    # image = image * -1
-    labels = np.zeros(image.shape)
-    currentLabel = 1
-    stack = []
-
-    for x in range(0, image.shape[0]):
-        for y in range(0, image.shape[1]):
-            if labels[x,y] == 0 and image[x,y] == 0:
-                currentLabel += 1
-                labels[x,y] = currentLabel
-                stack += [(x,y)]
-                while len(stack) > 0: #flood fill the component
-                    point = stack.pop()
-                    neighbors = get8Neighbors(point, image.shape)
-                    sameColorNeighbors = list(filter(lambda pt: image[pt[0], pt[1]] == image[point[0], point[1]], neighbors))
-                    unmarkedNeighbors = list(filter(lambda pt: labels[pt[0], pt[1]] == 0, sameColorNeighbors))
-                    for pt in unmarkedNeighbors:
-                        labels[pt[0], pt[1]] = labels[point[0], point[1]]
-                        stack.append(pt)
-    labels, areas = removeSmallComponents(labels, 40)
-    return labels, areas
-
-"""
-Parameters:
-    labels: a 2x2 matrix of component IDs
-    minPixels: the smallest area a component should have
-Returns:
-    labels: a 2x2 matrix of component IDs where component area > minPixels
-    areas: a dictionary {componentID: total area}
-"""
-def removeSmallComponents(labels, minPixels):
-    areas = {}
-    for i in range(len(labels)):
-        for j in range(len(labels[i])):
-            label = labels[i,j]
-            if label in areas:
-                areas[label] = areas[label] + 1
-            else:
-                areas[label] = 1
-    labelsToRemove = []
-    for x in areas:
-        if areas[x] < minPixels:
-            labelsToRemove += [x]
-    for i in range(len(labels)):
-        for j in range(len(labels[i])):
-            if labels[i,j] in labelsToRemove:
-                labels[i,j] = 0
-    return labels, areas
-
-def get8Neighbors(point, dimensions):
-    x = point[0]
-    y = point[1]
-    maxX = dimensions[0]
-    maxY = dimensions[1]
-    neighbors = [(x-1, y-1), (x, y-1), (x+1, y-1), 
-                 (x-1, y),             (x+1, y),
-                 (x-1, y+1), (x, y+1), (x+1, y+1) ]
-    return list(filter(lambda point: point[0] >= 0 and point[0] < maxX and point[1] >= 0 and point[1] < maxY, neighbors))
-
-"""
-Parameter components: a 2x2 matrix of component labels
-Returns colored: A 2x2x3 color image
-"""
-def colorComponents(components):
-    colored = np.zeros((components.shape[0], components.shape[1], 3), np.uint8)
-    #coloredComponents = map(getColorForComponent, components)
-    for x in range(len(components)):
-        for y in range(len(components[x])):
-            colored[x][y] = getColorForComponent(components[x][y])
-    return colored
-
-colors = {0: [0,0,0]}
-def getColorForComponent(index):
-    if index not in colors:
-        b = random.randint(0,255)
-        g = random.randint(0,255)
-        r = random.randint(0,255)
-        colors[index] = [b,g,r]
-    return colors[index]
+def getRectangleForObject(image, labels, object):
+    minX = 100000000000
+    minY = 100000000000
+    maxX = 0
+    maxY = 0
+    for y in range(len(labels)):
+        for x in range(len(labels[y])):
+            if labels[y][x] == object:
+                print("Found x="+str(x)+", y="+str(y)+" object="+str(object))
+                if y < minY:
+                    minY = y
+                if y > maxY:
+                    maxY = y
+                if x < minX:
+                    minX = x
+                if x > maxX:
+                    maxX = x
+    if minX == 100000000000 or minY == 100000000000 or maxX == 0 or maxY == 0:
+        return None
+    return Rectangle(minX, minY, labels[minY:maxY][minX:maxX])
 
 def open(image):
     return dilate(erode(image))
@@ -226,14 +222,50 @@ def erode(image):
                 newImage[x+1][y+1] = 0
     return newImage
 
+
+#template dictionary
+template_dict = {} 
+def loadTemplates():
+    global template_dict
+    template_img = list(map(lambda name: cv2.imread("templates/"+name, 0), filter(lambda name: name[0] != ".", os.listdir("templates/"))))
+    s = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    for i in range(len(template_img)):
+        letter = template_img[i]
+        template_dict[s[i]] = letter
+    return template_dict
+
+def matchImageToCharacter(image):
+    global template_dict
+    s = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+    best_correlation = -1
+    best_correlation_char = ""
+    for char in s:
+        template = template_dict[char]
+        resized_image = cv2.resize(image, (template.shape[1], template.shape[0]))
+        correlation = computeImageSimilarity(resized_image, template)
+        if correlation > best_correlation:
+            best_correlation = correlation
+            best_correlation_char = char
+    return [best_correlation_char, best_correlation]
+
+def computeImageSimilarity(image1, image2):
+    return cv2.matchTemplate(image1, image2, cv2.TM_CCORR_NORMED)
+
+
+
 """
 rect = Rectangle(0,0,cv2.imread("images/plate.jpg"))
 print(rect.isLicensePlate())
 rect = Rectangle(0,0,cv2.imread("images/car.jpg"))
 print(rect.isLicensePlate())"""
 main()
-
-
+"""
+loadTemplates()
+charToMatch = "0"
+image = template_dict[charToMatch]
+char, correlation = matchImageToCharacter(image)
+print("The character "+charToMatch+" best matches with "+char+" (correlation="+str(correlation)+")")
+"""
 
 
 
