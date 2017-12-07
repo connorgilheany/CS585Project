@@ -40,7 +40,8 @@ class Rectangle:
     def isCharacter(self):
         if self.area() < 100:
             return False
-        return self.height() > self.width() #abs(self.height() * 1.0 / self.width() - 2) < 1
+        ratio = self.height() * 1.0 / self.width()
+        return ratio > 1 and ratio < 7
 
     def height(self):
         return len(self.subimage)
@@ -49,7 +50,7 @@ class Rectangle:
         return len(self.subimage[0])
 
     def area(self):
-        return self.height() * self.width()
+        return self.height() * self.width() * 1.0
 
 class Character:
     character = ""
@@ -97,7 +98,7 @@ def findRectangles(image):
     blurred = cv2.medianBlur(image, 5)
     kernel = np.ones((3,3), np.uint8)
     kernel2 = np.ones((2,2), np.uint8)
-    thresholded = cv2.dilate(cv2.erode(cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 2), kernel), kernel2)
+    thresholded = cv2.dilate(cv2.erode(cv2.adaptiveThreshold(blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 3), kernel), kernel2)
     image2, contours, hierarchy = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
     for contour in contours: 
@@ -128,7 +129,7 @@ def readLicensePlates(plates):
     for plate in plates: 
         thresholded = cv2.adaptiveThreshold(plate.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 2)
         #binaryPlate = binary(plate.subimage)
-        cv2.imshow("image",thresholded)
+        cv2.imshow("contour", thresholded)
         cv2.waitKey(0)
         image2, contours, _ = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         rectangles = []
@@ -142,7 +143,7 @@ def readLicensePlates(plates):
             x2 = x + width
             subimage = plate.subimage[y:y2, x:x2]
             character = Rectangle(x, y, subimage)
-            if character.area() / plate.area() * 100 > 2.5 and character.isCharacter():
+            if character.area() / plate.area() * 100 > 4 and character.isCharacter():
                 rectangles += [character]
 
         
@@ -155,7 +156,7 @@ def readLicensePlates(plates):
             #binaryImage = (erode(dilate(binaryImage)))
 
             #binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2)
-            char, correlation = matchImageToCharacter(binaryImage)
+            char, correlation, location = matchImageToCharacter(binaryImage)
             print("This image best matches "+char+" (correlation="+str(correlation)+")")
             cv2.imshow(char +" "+str(correlation), binaryImage)
             cv2.waitKey(0)
@@ -173,26 +174,6 @@ def readLicensePlates(plates):
 
             #cv2.imshow("character", rectangle.subimage)
             #cv2.waitKey(0)
-
-
-
-        """
-        TODO:
-        Find a rectangle for each object, resize it to the character template size, then template match
-        """
-
-
-
-        """for x in range(1, numberOfObjects):
-            rect = getRectangleForObject(plate.subimage, labels, x)
-            if rect is None:
-                continue
-            print("x="+str(rect.x)+" y="+str(rect.y)+" subimage shape="+str(rect.subimage.shape))"""
-
-
-        #cv2.imshow('image', colorComponents(labels))
-        #cv2.waitKey(0)
-        #take all those objects
 
 def getRectangleForObject(image, labels, object):
     minX = 100000000000
@@ -247,27 +228,36 @@ def matchImageToCharacter(image):
     s = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     best_correlation = -1
     best_correlation_char = ""
-    for scale_factor in [1, 0.75, 0.5, 0.25]:
-        for char in s:
-            template = template_dict[char]
-            template = cv2.resize(template, (int(template.shape[1] * scale_factor), int(template.shape[0]*scale_factor)))
-
-
-            resized_image = cv2.resize(image, (int(template.shape[1]*1.20), int(template.shape[0]*1.20))) #make the image bigger than the template
+    best_location = None
+    for char in s:
+        template = template_dict[char]
+        resized_image = cv2.resize(image, (int(template.shape[1]), int(template.shape[0]))) #make the image the size of the original template
+        bordered_image = np.full((int(resized_image.shape[0] * 1.2), int(resized_image.shape[1] * 1.2)), 255)
+        minY = int(resized_image.shape[0] * 0.1)
+        minX = int(resized_image.shape[1] * 0.1)
+        for y in range(len(resized_image)):
+            for x in range(len(resized_image[y])):
+                bordered_image[y + minY][x + minX] = resized_image[y][x]
+        bordered_image = bordered_image.astype(np.uint8)
+        #cv2.imshow("borded", bordered_image)
+        #cv2.waitKey(0)
+        for scale_factor in [1, 0.95, 0.9, 0.85]:
+            template = cv2.resize(template, (int(template.shape[1] * scale_factor), int(template.shape[0]*scale_factor))) #resize the template to the scale factor
             for rotation in [5, 0, -5]: #accounts for letters which are slightly turned
                 rotated_template = rotate(template, rotation)#ndimage.rotate(template, rotation)
-                correlation = computeImageSimilarity(resized_image, rotated_template)
+                correlation, location = computeImageSimilarity(bordered_image, rotated_template)
                 print(char +" " +str(correlation))
                 if correlation > best_correlation:
                     best_correlation = correlation
                     best_correlation_char = char
+                    best_location = location
 
-    return [best_correlation_char, best_correlation]
+    return [best_correlation_char, best_correlation, best_location]
 
 def computeImageSimilarity(image1, image2, method=cv2.TM_CCOEFF_NORMED):
     match = cv2.matchTemplate(image1, image2, method)
-    (_, maxVal, _, _) = cv2.minMaxLoc(match)
-    return maxVal
+    (_, maxVal, _, maxLoc) = cv2.minMaxLoc(match)
+    return maxVal, maxLoc
 
 def rotate(image, degrees):
     rows,cols = image.shape
