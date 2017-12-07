@@ -22,8 +22,9 @@ class Rectangle:
     x = 0
     y = 0
     subimage = None #the array of pixels in the rectangle
+    correlation = 0
 
-    def __init__(self, x, y, subimage):
+    def __init__(self, x, y, subimage, correlation = 0):
         self.x = x
         self.y = y
         self.subimage = subimage
@@ -50,13 +51,15 @@ class Rectangle:
     def area(self):
         return self.height() * self.width()
 
-class CharacterTemplate(Rectangle):
+class Character:
     character = ""
-    template = None
+    correlation = 0
+    location = None
 
-    def __init__(self, character, template):
+    def __init__(self, character, correlation, location):
         self.character = character
-        self.template = template
+        self.correlation = correlation
+        self.location = location
 
 
 def main():
@@ -66,7 +69,8 @@ def main():
 
         rectangles = findRectangles(image)
         plates = detectLicensePlates(rectangles)
-        readLicensePlates(plates)
+        orderedCharacters = readLicensePlates(plates)
+        print(orderedCharacters)
     cv2.destroyAllWindows()
 
 def binary(image):
@@ -141,7 +145,8 @@ def readLicensePlates(plates):
             if character.area() / plate.area() * 100 > 2.5 and character.isCharacter():
                 rectangles += [character]
 
-
+        
+        characters = []
         for potentialCharacter in rectangles:
             #potentialCharacter.subimage = cv2.blur(potentialCharacter.subimage, (3,3))
             #cv2.imshow("blurred", potentialCharacter.subimage)
@@ -154,6 +159,17 @@ def readLicensePlates(plates):
             print("This image best matches "+char+" (correlation="+str(correlation)+")")
             cv2.imshow(char +" "+str(correlation), binaryImage)
             cv2.waitKey(0)
+            
+            if correlation > .005:
+                character = Character(char, correlation, potentialCharacter)
+                characters += character
+
+        orderedCharacters = sorted(characters, key=lambda character: character.location.x)
+      #  for i in orderedCharacters - 1:
+       #     if abs(i.location.x = [i + 1].location.x) < 10
+
+
+        return orderedCharacters
 
             #cv2.imshow("character", rectangle.subimage)
             #cv2.waitKey(0)
