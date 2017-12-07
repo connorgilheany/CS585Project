@@ -14,7 +14,7 @@ import numpy as np
 import cv2
 import os
 import random
-
+from collections import defaultdict
 
 
 class Rectangle:
@@ -143,12 +143,18 @@ def readLicensePlates(plates):
 
 
         for potentialCharacter in rectangles:
-            binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+            #potentialCharacter.subimage = cv2.blur(potentialCharacter.subimage, (3,3))
+            #cv2.imshow("blurred", potentialCharacter.subimage)
+            binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 9, 5)
+            #kernel = np.ones((2,2), np.uint8)
+            #binaryImage = (erode(dilate(binaryImage)))
+
             #binaryImage = cv2.adaptiveThreshold(potentialCharacter.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 43, 2)
             char, correlation = matchImageToCharacter(binaryImage)
             print("This image best matches "+char+" (correlation="+str(correlation)+")")
-            cv2.imshow("character", binaryImage)
+            cv2.imshow(char +" "+str(correlation), binaryImage)
             cv2.waitKey(0)
+
             #cv2.imshow("character", rectangle.subimage)
             #cv2.waitKey(0)
 
@@ -199,28 +205,13 @@ def open(image):
 def close(image):
     return erode(dilate(image))
 
-def dilate(image):
-    newImage = np.zeros(image.shape)
-    for x in range(image.shape[0]-1):
-        for y in range(image.shape[1]-1):
-            if image[x][y] > 0:
-                newImage[x][y] = 1
-                newImage[x+1][y] = 1
-                newImage[x][y+1] = 1
-                newImage[x+1][y+1] = 1
-    return newImage
+def dilate(image, kernelSize=2):
+    kernel = np.ones((kernelSize,kernelSize), np.uint8)
+    return cv2.dilate(image, kernel)
 
-def erode(image):
-    newImage = np.zeros(image.shape)
-    for x in range(image.shape[0]-1):
-        for y in range(image.shape[1]-1):
-            if image[x][y] > 0 and image[x+1][y] > 0 and image[x][y+1] > 0 and image[x+1][y+1] > 0:
-
-                newImage[x][y] = 1
-                newImage[x+1][y] = 0
-                newImage[x][y+1] = 0
-                newImage[x+1][y+1] = 0
-    return newImage
+def erode(image, kernelSize=2):
+    kernel = np.ones((kernelSize,kernelSize), np.uint8)
+    return cv2.erode(image, kernel)
 
 
 #template dictionary
@@ -236,22 +227,37 @@ def loadTemplates():
 
 def matchImageToCharacter(image):
     global template_dict
+    global methods_dict
     s = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
     best_correlation = -1
     best_correlation_char = ""
-    for char in s:
-        template = template_dict[char]
-        resized_image = cv2.resize(image, (template.shape[1], template.shape[0]))
-        correlation = computeImageSimilarity(resized_image, template)
-        if correlation > best_correlation:
-            best_correlation = correlation
-            best_correlation_char = char
+    for scale_factor in [1, 0.75, 0.5, 0.25]:
+        for char in s:
+            template = template_dict[char]
+            template = cv2.resize(template, (int(template.shape[1] * scale_factor), int(template.shape[0]*scale_factor)))
+
+
+            resized_image = cv2.resize(image, (int(template.shape[1]*1.20), int(template.shape[0]*1.20))) #make the image bigger than the template
+            for rotation in [5, 0, -5]: #accounts for letters which are slightly turned
+                rotated_template = rotate(template, rotation)#ndimage.rotate(template, rotation)
+                correlation = computeImageSimilarity(resized_image, rotated_template)
+                print(char +" " +str(correlation))
+                if correlation > best_correlation:
+                    best_correlation = correlation
+                    best_correlation_char = char
+
     return [best_correlation_char, best_correlation]
 
-def computeImageSimilarity(image1, image2):
-    return cv2.matchTemplate(image1, image2, cv2.TM_CCORR_NORMED)
+def computeImageSimilarity(image1, image2, method=cv2.TM_CCOEFF_NORMED):
+    match = cv2.matchTemplate(image1, image2, method)
+    (_, maxVal, _, _) = cv2.minMaxLoc(match)
+    return maxVal
 
-
+def rotate(image, degrees):
+    rows,cols = image.shape
+    M = cv2.getRotationMatrix2D((cols/2,rows/2),degrees,1)
+    dst = cv2.warpAffine(image,M,(cols,rows))
+    return dst
 
 """
 rect = Rectangle(0,0,cv2.imread("images/plate.jpg"))
