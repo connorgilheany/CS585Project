@@ -174,9 +174,6 @@ def findRectangles(image):
         x2 = x + width
         subimage = image[y:y2, x:x2]
         rect = Rectangle(x, y, subimage)
-        if rect.area() > 500:
-            cv2.imshow("contour", subimage)
-            cv2.waitKey(0)
         if rect.area() / (image.shape[0] * image.shape[1]) * 100 > 3:
             rectangles += [rect]
     return rectangles
@@ -196,7 +193,10 @@ def readLicensePlates(plates):
     """
     characters = []
     for plate in plates: 
+        cv2.imshow("plate", plate.rectangle.subimage)
         thresholded = cv2.bitwise_not(cv2.adaptiveThreshold(plate.rectangle.subimage, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 17, 5))
+        cv2.imshow("thresholded", thresholded)
+        cv2.waitKey(0)
         #binaryPlate = binary(plate.subimage)
         image2, contours, _ = cv2.findContours(thresholded, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         #rectangles = []
@@ -285,7 +285,7 @@ def matchImageToCharacter(image):
                     best_location = location
                     best_scale = scale_factor
     #DEBUG CODE BELOW - shows how the template match is happening for each character
-
+    """
     template = best_correlation_templateObj.template
     resized_image = cv2.resize(image, (int(template.shape[1]), int(template.shape[0]))) #make the image the size of the original template
     whitespace_scale = 1.3
@@ -307,7 +307,7 @@ def matchImageToCharacter(image):
     cv2.imshow("Overlay "+str(best_correlation), bordered_image)
     cv2.imshow("bestpl8 scl:"+str(best_scale), template)
     cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    cv2.destroyAllWindows()"""
 
     return [best_correlation_templateObj.char, best_correlation, best_location]
 
